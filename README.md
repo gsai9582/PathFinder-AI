@@ -141,3 +141,9 @@ Complete in-depth specifications and architectural whitepapers are available in 
 - [`11-technology-stack.md`](file:///c:/New%20folder/PathFinder%20AI/docs/11-technology-stack.md) — Engineering Specifications & Dependency Matrix
 - [`12-challenges.md`](file:///c:/New%20folder/PathFinder%20AI/docs/12-challenges.md) — Engineering Challenges & Technical Solutions
 - [`13-future-scope.md`](file:///c:/New%20folder/PathFinder%20AI/docs/13-future-scope.md) — Long-Term Evolution & Enterprise Reskilling Roadmap
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
