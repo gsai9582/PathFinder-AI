@@ -1,0 +1,111 @@
+from typing import Optional
+import datetime
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.models import LearnerProfile, Roadmap, RoadmapPhase, RoadmapItem
+from app.schemas.schemas import (
+    RoadmapRead, RoadmapGenerateRequest, RoadmapItemStatusUpdate,
+    WhatIfRequest, WhatIfResponse, AdaptationRequest, AdaptationResponse
+)
+from app.services.roadmap_service import RoadmapService
+from app.roadmap.what_if_simulator import simulate_roadmap_impact
+
+router = APIRouter()
+
+@router.get("/roadmap", response_model=RoadmapRead)
+def get_roadmap(profile_id: Optional[int] = None, db: Session = Depends(get_db)):
+    if profile_id:
+        profile = db.query(LearnerProfile).filter(LearnerProfile.id == profile_id).first()
+    else:
+        profile = db.query(LearnerProfile).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Learner profile not found.")
+
+    roadmap = RoadmapService.get_or_generate_roadmap(db, profile, force_regenerate=False)
+    return RoadmapService.format_roadmap_response(roadmap)
+
+@router.post("/roadmap/generate", response_model=RoadmapRead)
+def generate_roadmap(req: RoadmapGenerateRequest, db: Session = Depends(get_db)):
+    profile = db.query(LearnerProfile).filter(LearnerProfile.id == req.profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Learner profile not found.")
+
+    roadmap = RoadmapService.get_or_generate_roadmap(db, profile, force_regenerate=req.force_regenerate)
+    return RoadmapService.format_roadmap_response(roadmap)
+
+@router.put("/roadmap/item/status")
+def update_item_status(data: RoadmapItemStatusUpdate, db: Session = Depends(get_db)):
+    item = db.query(RoadmapItem).filter(RoadmapItem.id == data.item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Roadmap item not found.")
+
+    item.status = data.status
+    if data.status == "Completed":
+        item.completed_at = datetime.datetime.utcnow()
+        next_item = db.query(RoadmapItem).filter(
+            RoadmapItem.phase_id == item.phase_id,
+            RoadmapItem.order_index == item.order_index + 1
+        ).first()
+        if next_item and next_item.status == "Locked":
+            next_item.status = "Available"
+            next_item.unlocked_at = datetime.datetime.utcnow()
+
+        phase = item.phase
+        if phase and all(i.status == "Completed" for i in phase.items):
+            phase.status = "Completed"
+            next_phase = db.query(RoadmapPhase).filter(
+                RoadmapPhase.roadmap_id == phase.roadmap_id,
+                RoadmapPhase.phase_number == phase.phase_number + 1
+            ).first()
+            if next_phase:
+                next_phase.status = "In Progress"
+                for npi in next_phase.items:
+                    if npi.order_index == 0:
+                        npi.status = "Available"
+                        npi.unlocked_at = datetime.datetime.utcnow()
+
+    db.commit()
+    return {"success": True, "item_id": item.id, "new_status": item.status}
+
+@router.post("/roadmap/what-if", response_model=WhatIfResponse)
+def simulate_what_if(req: WhatIfRequest, db: Session = Depends(get_db)):
+    profile = db.query(LearnerProfile).filter(LearnerProfile.id == req.profile_id).first()
+    if not profile:
+        profile = db.query(LearnerProfile).first()
+
+    if not profile:
+        raise HTTPException(status_code=404, detail="Learner profile not found.")
+
+    roadmap = db.query(Roadmap).filter(
+        Roadmap.profile_id == profile.id,
+        Roadmap.is_active == True
+    ).first()
+
+    if not roadmap:
+        roadmap = RoadmapService.get_or_generate_roadmap(db, profile)
+
+    return simulate_roadmap_impact(profile, roadmap, req)
+
+@router.post("/roadmap/adapt", response_model=AdaptationResponse)
+def adapt_roadmap(req: AdaptationRequest, db: Session = Depends(get_db)):
+    """
+    Applies real-time adaptive learning mutations to active roadmap based on
+    assessment performance, feedback, difficulty, mistakes, or inactivity.
+    """
+    try:
+        from app.roadmap.adaptive_engine import execute_roadmap_adaptation
+        return execute_roadmap_adaptation(db, req)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/roadmap/changelog")
+def get_roadmap_changelog(profile_id: Optional[int] = None, db: Session = Depends(get_db)):
+    from app.services.analytics_service import AnalyticsService
+    profile = db.query(LearnerProfile).filter(LearnerProfile.id == profile_id).first() if profile_id else db.query(LearnerProfile).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Learner profile not found.")
+    return AnalyticsService.get_roadmap_changelog(db, profile)
+
+
