@@ -144,6 +144,12 @@ Complete in-depth specifications and architectural whitepapers are available in 
 
 ---
 
+## 🔒 Security & Privacy
+
+PathFinder AI enforces strict security standards, input sanitization, Pydantic v2 contract validation, and AI prompt safety. For vulnerability reporting guidelines and our security architecture, see [SECURITY.md](SECURITY.md).
+
+---
+
 ## 📄 License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
